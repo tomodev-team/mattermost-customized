@@ -57,6 +57,30 @@ export type FileUploadResponse = {
     client_ids: string[];
 }
 
+export type DirectUploadInfo = {
+    url: string;
+    method: string;
+    headers?: Record<string, string>;
+    expires_at: number;
+};
+
+export type UploadSession = {
+    id: string;
+    type: string;
+    create_at: number;
+    user_id: string;
+    channel_id?: string;
+    filename: string;
+    file_size: number;
+    file_offset: number;
+    direct_upload?: DirectUploadInfo;
+};
+
+export type CompleteUploadRequest = {
+    width?: number;
+    height?: number;
+};
+
 export type FileSearchResultItem = FileInfo & {
     channel_id: string;
 }

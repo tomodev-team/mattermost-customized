@@ -10,7 +10,7 @@ import {getFileThumbnailUrl, getFileUrl} from 'mattermost-redux/utils/file_utils
 import type {FilePreviewInfo} from 'components/file_preview/file_preview';
 
 import Constants, {FileTypes} from 'utils/constants';
-import {getFileTypeFromMime} from 'utils/file_utils';
+import {getFileTypeFromMime, isHeavyMediaFile} from 'utils/file_utils';
 import {
     getFileType,
     getIconClassName,
@@ -43,7 +43,7 @@ const FileThumbnail = ({
     }
 
     // If the file is rejected, always show the file icon instead of thumbnail
-    if (id && !disablePreview && !isRejected) {
+    if (id && !disablePreview && !isRejected && !isHeavyMediaFile(fileInfo)) {
         if (type === FileTypes.IMAGE) {
             let className = 'post-image';
 

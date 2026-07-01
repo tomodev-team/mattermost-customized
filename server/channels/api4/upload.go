@@ -21,6 +21,7 @@ func (api *API) InitUpload() {
 	api.BaseRoutes.Uploads.Handle("", api.APISessionRequired(createUpload, handlerParamFileAPI)).Methods(http.MethodPost)
 	api.BaseRoutes.Upload.Handle("", api.APISessionRequired(getUpload)).Methods(http.MethodGet)
 	api.BaseRoutes.Upload.Handle("", api.APISessionRequired(uploadData, handlerParamFileAPI)).Methods(http.MethodPost)
+	api.BaseRoutes.Upload.Handle("/complete", api.APISessionRequired(completeUpload)).Methods(http.MethodPost)
 }
 
 func createUpload(c *Context, w http.ResponseWriter, r *http.Request) {
@@ -174,6 +175,61 @@ func uploadData(c *Context, w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if err := json.NewEncoder(w).Encode(info); err != nil {
+		c.Logger.Warn("Error while writing response", mlog.Err(err))
+	}
+}
+
+func completeUpload(c *Context, w http.ResponseWriter, r *http.Request) {
+	if !*c.App.Config().FileSettings.EnableFileAttachments {
+		c.Err = model.NewAppError("completeUpload", "api.file.attachments.disabled.app_error",
+			nil, "", http.StatusNotImplemented)
+		return
+	}
+
+	c.RequireUploadId()
+	if c.Err != nil {
+		return
+	}
+
+	auditRec := c.MakeAuditRecord(model.AuditEventUploadData, model.AuditStatusFail)
+	defer c.LogAuditRec(auditRec)
+	model.AddEventParameterToAuditRec(auditRec, "upload_id", c.Params.UploadId)
+
+	c.AppContext = c.AppContext.With(app.RequestContextWithMaster)
+	us, err := c.App.GetUploadSession(c.AppContext, c.Params.UploadId)
+	if err != nil {
+		c.Err = err
+		return
+	}
+
+	if us.Type == model.UploadTypeImport {
+		c.Err = model.NewAppError("completeUpload", "api.upload.complete.unsupported_type.app_error", nil, "", http.StatusBadRequest)
+		return
+	}
+	if us.UserId != c.AppContext.Session().UserId {
+		c.SetPermissionError(model.PermissionUploadFile)
+		return
+	} else if ok, _ := c.App.SessionHasPermissionToChannel(c.AppContext, *c.AppContext.Session(), us.ChannelId, model.PermissionUploadFile); !ok {
+		c.SetPermissionError(model.PermissionUploadFile)
+		return
+	}
+
+	var complete model.CompleteUploadRequest
+	if r.Body != nil {
+		if jsonErr := json.NewDecoder(r.Body).Decode(&complete); jsonErr != nil && !errors.Is(jsonErr, io.EOF) {
+			c.SetInvalidParamWithErr("upload", jsonErr)
+			return
+		}
+	}
+
+	info, err := c.App.CompleteDirectUpload(c.AppContext, us, &complete)
+	if err != nil {
+		c.Err = err
+		return
+	}
+
+	auditRec.Success()
 	if err := json.NewEncoder(w).Encode(info); err != nil {
 		c.Logger.Warn("Error while writing response", mlog.Err(err))
 	}

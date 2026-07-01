@@ -47,6 +47,18 @@ type FileBackendWithLinkGenerator interface {
 	GeneratePublicLink(path string) (string, time.Duration, error)
 }
 
+type FileBackendFileInfo struct {
+	Size        int64
+	ContentType string
+	ModTime     time.Time
+	ETag        string
+}
+
+type FileBackendWithDirectUpload interface {
+	GenerateUploadLink(path string, expires time.Duration) (string, time.Duration, error)
+	StatFile(path string) (*FileBackendFileInfo, error)
+}
+
 type FileBackendSettings struct {
 	DriverName                         string
 	Directory                          string

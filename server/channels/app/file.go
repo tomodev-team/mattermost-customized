@@ -7,6 +7,7 @@ import (
 	"archive/zip"
 	"bytes"
 	"context"
+	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/base64"
 	"fmt"
@@ -46,6 +47,7 @@ const (
 	miniPreviewImageWidth      = 16
 	miniPreviewImageHeight     = 16
 	jpegEncQuality             = 90
+	imageCDNPrewarmSizeLimit   = 10 * 1024 * 1024
 	maxUploadInitialBufferSize = 1024 * 1024 // 1MB
 	maxContentExtractionSize   = 1024 * 1024 // 1MB
 )
@@ -583,6 +585,86 @@ func (a *App) MigrateFilenamesToFileInfos(rctx request.CTX, post *model.Post) []
 func (a *App) GeneratePublicLink(siteURL string, info *model.FileInfo) string {
 	hash := GeneratePublicLinkHash(info.Id, *a.Config().FileSettings.PublicLinkSalt)
 	return fmt.Sprintf("%s/files/%v/public?h=%s", siteURL, info.Id, hash)
+}
+
+func (a *App) GenerateFileCDNLink(info *model.FileInfo, variant model.FileDownloadType, forceDownload bool) string {
+	baseURL := strings.TrimSpace(*a.Config().FileSettings.FileCDNURL)
+	secret := *a.Config().FileSettings.FileCDNSigningSecret
+	if baseURL == "" || secret == "" || info == nil || info.Path == "" {
+		return ""
+	}
+
+	expiresAt := model.GetMillis() + (*a.Config().FileSettings.FileCDNURLExpiresSeconds * 1000)
+	download := "0"
+	if forceDownload {
+		download = "1"
+	}
+
+	canonical := strings.Join([]string{
+		info.Path,
+		string(variant),
+		strconv.FormatInt(expiresAt, 10),
+		download,
+		info.Name,
+		info.MimeType,
+	}, "\n")
+	mac := hmac.New(sha256.New, []byte(secret))
+	mac.Write([]byte(canonical))
+	signature := base64.RawURLEncoding.EncodeToString(mac.Sum(nil))
+
+	u, err := url.Parse(baseURL)
+	if err != nil {
+		return ""
+	}
+	q := u.Query()
+	q.Set("key", info.Path)
+	q.Set("variant", string(variant))
+	q.Set("exp", strconv.FormatInt(expiresAt, 10))
+	q.Set("download", download)
+	q.Set("name", info.Name)
+	q.Set("mime", info.MimeType)
+	q.Set("sig", signature)
+	u.RawQuery = q.Encode()
+
+	return u.String()
+}
+
+func (a *App) PrewarmFileCDNImages(rctx request.CTX, info *model.FileInfo) {
+	if info == nil || !info.IsImage() || info.IsSvg() {
+		return
+	}
+	if info.Size >= imageCDNPrewarmSizeLimit || info.Width == 0 || info.Height == 0 {
+		return
+	}
+
+	for _, variant := range []model.FileDownloadType{model.FileDownloadTypeThumbnail, model.FileDownloadTypePreview} {
+		cdnLink := a.GenerateFileCDNLink(info, variant, false)
+		if cdnLink == "" {
+			return
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, cdnLink, nil)
+		if err != nil {
+			cancel()
+			rctx.Logger().Debug("Failed to build CDN prewarm request", mlog.Err(err), mlog.String("file_id", info.Id), mlog.String("variant", string(variant)))
+			continue
+		}
+
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			cancel()
+			rctx.Logger().Debug("Failed to prewarm CDN image", mlog.Err(err), mlog.String("file_id", info.Id), mlog.String("variant", string(variant)))
+			continue
+		}
+		_, _ = io.Copy(io.Discard, resp.Body)
+		resp.Body.Close()
+		cancel()
+
+		if resp.StatusCode >= http.StatusBadRequest {
+			rctx.Logger().Debug("CDN image prewarm returned error", mlog.Int("status_code", resp.StatusCode), mlog.String("file_id", info.Id), mlog.String("variant", string(variant)))
+		}
+	}
 }
 
 func GeneratePublicLinkHash(fileID, salt string) string {
@@ -1259,16 +1341,24 @@ func (a *App) generateMiniPreview(rctx request.CTX, fi *model.FileInfo) {
 }
 
 func (a *App) generateMiniPreviewForInfos(rctx request.CTX, fileInfos []*model.FileInfo) {
-	wg := new(sync.WaitGroup)
-
-	wg.Add(len(fileInfos))
 	for _, fileInfo := range fileInfos {
-		go func(fi *model.FileInfo) {
-			defer wg.Done()
-			a.generateMiniPreview(rctx, fi)
-		}(fileInfo)
+		a.queueMiniPreviewGeneration(rctx, fileInfo)
 	}
-	wg.Wait()
+}
+
+func (a *App) queueMiniPreviewGeneration(rctx request.CTX, fi *model.FileInfo) {
+	if fi == nil || !fi.IsImage() || fi.IsSvg() || fi.MiniPreview != nil {
+		return
+	}
+	if fi.Size >= imageCDNPrewarmSizeLimit || fi.Width == 0 || fi.Height == 0 {
+		return
+	}
+
+	infoCopy := *fi
+	backgroundCtx := request.EmptyContext(rctx.Logger())
+	a.Srv().Go(func() {
+		a.generateMiniPreview(backgroundCtx, &infoCopy)
+	})
 }
 
 func (s *Server) getFileInfo(fileID string) (*model.FileInfo, *model.AppError) {
@@ -1299,7 +1389,7 @@ func (a *App) GetFileInfo(rctx request.CTX, fileID string) (*model.FileInfo, *mo
 		return nil, model.NewAppError("GetFileInfo", "app.file.cloud.get.app_error", nil, "", http.StatusForbidden)
 	}
 
-	a.generateMiniPreview(rctx, fileInfo)
+	a.queueMiniPreviewGeneration(rctx, fileInfo)
 	return fileInfo, appErr
 }
 

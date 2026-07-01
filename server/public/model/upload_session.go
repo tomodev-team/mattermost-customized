@@ -45,6 +45,20 @@ type UploadSession struct {
 	RemoteId string `json:"remote_id"`
 	// Requested file id if uploading for shared channel
 	ReqFileId string `json:"req_file_id"`
+	// DirectUpload contains a short-lived object storage URL for clients that can upload without proxying bytes through the server.
+	DirectUpload *DirectUploadInfo `json:"direct_upload,omitempty" db:"-"`
+}
+
+type DirectUploadInfo struct {
+	URL       string            `json:"url"`
+	Method    string            `json:"method"`
+	Headers   map[string]string `json:"headers,omitempty"`
+	ExpiresAt int64             `json:"expires_at"`
+}
+
+type CompleteUploadRequest struct {
+	Width  int `json:"width,omitempty"`
+	Height int `json:"height,omitempty"`
 }
 
 func (us *UploadSession) Auditable() map[string]any {

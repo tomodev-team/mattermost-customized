@@ -98,6 +98,7 @@ export default class AudioVideoPreview extends React.PureComponent<Props, State>
                 ref={this.videoRef}
                 data-setup='{}'
                 controls={true}
+                preload='metadata'
                 width={width}
                 height={height}
             >

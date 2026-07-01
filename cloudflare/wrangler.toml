@@ -1,0 +1,23 @@
+name = "mattermost-r2-files"
+main = "r2-file-worker.js"
+compatibility_date = "2026-06-29"
+
+[[routes]]
+pattern = "assets.tomodev.vn/*"
+zone_name = "tomodev.vn"
+
+[[r2_buckets]]
+binding = "FILES_BUCKET"
+bucket_name = "tomodev-chat"
+
+[images]
+binding = "IMAGES"
+remote = true
+
+[vars]
+# Comma-separated Mattermost origins allowed to fetch redirected file URLs.
+# Example: "http://localhost:8065,https://chat.example.com"
+CORS_ALLOWED_ORIGINS = "http://localhost:8065"
+
+# Set this with:
+# wrangler secret put FILE_CDN_SIGNING_SECRET

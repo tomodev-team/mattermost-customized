@@ -320,6 +320,39 @@ describe('components/FileUpload', () => {
         expect(baseProps.onUploadError).toHaveBeenCalledWith(null);
     });
 
+    test('should mark upload started before a fast upload can complete', () => {
+        const calls: string[] = [];
+        const fileInfo = {id: 'file_info1'} as FileInfo;
+        const fastUploadFile = jest.fn((params) => {
+            calls.push('uploadFile');
+            params.onSuccess({file_infos: [fileInfo], client_ids: [params.clientId]}, baseProps.channelId, baseProps.rootId);
+            return {} as XMLHttpRequest;
+        });
+        const props = {
+            ...baseProps,
+            onUploadStart: jest.fn(() => calls.push('onUploadStart')),
+            onFileUpload: jest.fn(() => calls.push('onFileUpload')),
+            actions: {
+                uploadFile: fastUploadFile,
+            },
+        };
+        const files = [{name: 'file1.pdf'} as File];
+
+        const ref = React.createRef<FileUploadClass>();
+        renderWithContext(
+            <FileUpload
+                {...props}
+                ref={ref}
+            />,
+        );
+
+        const instance = ref.current!;
+        instance.checkPluginHooksAndUploadFiles(files);
+
+        expect(calls).toEqual(['onUploadStart', 'uploadFile', 'onFileUpload']);
+        expect(props.onFileUpload).toHaveBeenCalledWith([fileInfo], [expect.stringMatching(generatedIdRegex)], baseProps.channelId, baseProps.rootId);
+    });
+
     test('should error max upload files', () => {
         const fileCount = 10;
         const props = {...baseProps, fileCount};

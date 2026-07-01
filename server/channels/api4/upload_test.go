@@ -451,6 +451,64 @@ func TestUploadData(t *testing.T) {
 	})
 }
 
+func TestCompleteUpload(t *testing.T) {
+	mainHelper.Parallel(t)
+	th := Setup(t).InitBasic(t)
+
+	us := &model.UploadSession{
+		Id:        model.NewId(),
+		Type:      model.UploadTypeAttachment,
+		CreateAt:  model.GetMillis(),
+		UserId:    th.BasicUser2.Id,
+		ChannelId: th.BasicChannel.Id,
+		Filename:  "upload.zip",
+		FileSize:  8 * 1024 * 1024,
+	}
+	us, err := th.App.CreateUploadSession(th.Context, us)
+	require.Nil(t, err)
+	require.NotNil(t, us)
+	require.NotEmpty(t, us)
+
+	t.Run("file attachments disabled", func(t *testing.T) {
+		th.App.UpdateConfig(func(cfg *model.Config) { *cfg.FileSettings.EnableFileAttachments = false })
+		defer th.App.UpdateConfig(func(cfg *model.Config) { *cfg.FileSettings.EnableFileAttachments = true })
+
+		info, resp, err := th.Client.CompleteUpload(context.Background(), model.NewId(), nil)
+		require.Nil(t, info)
+		CheckErrorID(t, err, "api.file.attachments.disabled.app_error")
+		require.Equal(t, http.StatusNotImplemented, resp.StatusCode)
+	})
+
+	t.Run("upload not found", func(t *testing.T) {
+		info, resp, err := th.Client.CompleteUpload(context.Background(), model.NewId(), nil)
+		require.Nil(t, info)
+		CheckErrorID(t, err, "app.upload.get.app_error")
+		require.Equal(t, http.StatusNotFound, resp.StatusCode)
+	})
+
+	t.Run("no permissions", func(t *testing.T) {
+		info, _, err := th.Client.CompleteUpload(context.Background(), us.Id, nil)
+		require.Nil(t, info)
+		CheckErrorID(t, err, "api.context.permissions.app_error")
+	})
+
+	t.Run("direct upload disabled", func(t *testing.T) {
+		u, resp, err := th.Client.CreateUpload(context.Background(), &model.UploadSession{
+			ChannelId: th.BasicChannel.Id,
+			Filename:  "upload.zip",
+			FileSize:  8 * 1024 * 1024,
+		})
+		require.NoError(t, err)
+		require.NotEmpty(t, u)
+		require.Equal(t, http.StatusCreated, resp.StatusCode)
+
+		info, resp, err := th.Client.CompleteUpload(context.Background(), u.Id, nil)
+		require.Nil(t, info)
+		CheckErrorID(t, err, "app.upload.complete.direct_upload_disabled.app_error")
+		require.Equal(t, http.StatusNotImplemented, resp.StatusCode)
+	})
+}
+
 func TestUploadDataMultipart(t *testing.T) {
 	mainHelper.Parallel(t)
 	th := Setup(t).InitBasic(t)

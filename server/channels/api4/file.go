@@ -30,6 +30,16 @@ const (
 
 const maxMultipartFormDataBytes = 10 * 1024 // 10Kb
 
+func redirectToFileCDN(c *Context, w http.ResponseWriter, r *http.Request, info *model.FileInfo, downloadType model.FileDownloadType, forceDownload bool) bool {
+	cdnLink := c.App.GenerateFileCDNLink(info, downloadType, forceDownload)
+	if cdnLink == "" {
+		return false
+	}
+
+	http.Redirect(w, r, cdnLink, http.StatusFound)
+	return true
+}
+
 func (api *API) InitFile() {
 	api.BaseRoutes.Files.Handle("", api.APISessionRequired(uploadFileStream, handlerParamFileAPI)).Methods(http.MethodPost)
 	api.BaseRoutes.File.Handle("", api.APISessionRequiredTrustRequester(getFile)).Methods(http.MethodGet, http.MethodHead)
@@ -613,6 +623,11 @@ func getFile(c *Context, w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if redirectToFileCDN(c, w, r, fileInfo, model.FileDownloadTypeFile, forceDownload) {
+		auditRec.Success()
+		return
+	}
+
 	fileReader, err := c.App.FileReader(fileInfo.Path)
 
 	if err != nil {
@@ -678,6 +693,10 @@ func getFileThumbnail(c *Context, w http.ResponseWriter, r *http.Request) {
 
 	if info.ThumbnailPath == "" {
 		c.Err = model.NewAppError("getFileThumbnail", "api.file.get_file_thumbnail.no_thumbnail.app_error", nil, "file_id="+info.Id, http.StatusBadRequest)
+		return
+	}
+
+	if redirectToFileCDN(c, w, r, info, model.FileDownloadTypeThumbnail, forceDownload) {
 		return
 	}
 
@@ -810,6 +829,10 @@ func getFilePreview(c *Context, w http.ResponseWriter, r *http.Request) {
 		w.Header().Set(model.HeaderRejectReason, rejectionReason)
 		c.Err = model.NewAppError("getFilePreview", "api.file.get_file_preview.rejected_by_plugin",
 			map[string]any{"Reason": rejectionReason}, "", http.StatusForbidden)
+		return
+	}
+
+	if redirectToFileCDN(c, w, r, info, model.FileDownloadTypePreview, forceDownload) {
 		return
 	}
 

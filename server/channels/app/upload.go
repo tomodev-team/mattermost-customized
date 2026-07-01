@@ -18,9 +18,43 @@ import (
 	"github.com/mattermost/mattermost/server/public/shared/mlog"
 	"github.com/mattermost/mattermost/server/public/shared/request"
 	"github.com/mattermost/mattermost/server/v8/channels/store"
+	"github.com/mattermost/mattermost/server/v8/platform/shared/filestore"
 )
 
 const minFirstPartSize = 5 * 1024 * 1024 // 5MB
+
+func (a *App) attachDirectUploadInfo(us *model.UploadSession) {
+	if us == nil || us.Type != model.UploadTypeAttachment || !*a.Config().FileSettings.EnableDirectFileUploads {
+		return
+	}
+	if strings.TrimSpace(*a.Config().FileSettings.FileCDNURL) == "" || strings.TrimSpace(*a.Config().FileSettings.FileCDNSigningSecret) == "" {
+		return
+	}
+
+	backend, ok := a.FileBackend().(filestore.FileBackendWithDirectUpload)
+	if !ok {
+		return
+	}
+
+	expires := time.Duration(*a.Config().FileSettings.DirectFileUploadExpiresSeconds) * time.Second
+	link, exp, err := backend.GenerateUploadLink(us.Path, expires)
+	if err != nil {
+		a.Log().Warn("Failed to generate direct upload link", mlog.Err(err), mlog.String("upload_id", us.Id))
+		return
+	}
+
+	headers := map[string]string{}
+	if contentType := mime.TypeByExtension(strings.ToLower(filepath.Ext(us.Filename))); contentType != "" {
+		headers["Content-Type"] = contentType
+	}
+
+	us.DirectUpload = &model.DirectUploadInfo{
+		URL:       link,
+		Method:    http.MethodPut,
+		Headers:   headers,
+		ExpiresAt: model.GetMillis() + int64(exp/time.Millisecond),
+	}
+}
 
 func (a *App) genFileInfoFromReader(name string, file io.ReadSeeker, size int64) (*model.FileInfo, error) {
 	name = model.SanitizeFilename(name)
@@ -165,6 +199,8 @@ func (a *App) CreateUploadSession(rctx request.CTX, us *model.UploadSession) (*m
 	if storeErr != nil {
 		return nil, model.NewAppError("CreateUploadSession", "app.upload.create.save.app_error", nil, "", http.StatusInternalServerError).Wrap(storeErr)
 	}
+
+	a.attachDirectUploadInfo(us)
 
 	return us, nil
 }
@@ -357,6 +393,95 @@ func (a *App) UploadData(rctx request.CTX, us *model.UploadSession, rd io.Reader
 	}
 
 	// delete upload session
+	if storeErr := a.Srv().Store().UploadSession().Delete(us.Id); storeErr != nil {
+		rctx.Logger().Warn("Failed to delete UploadSession", mlog.Err(storeErr))
+	}
+
+	return info, nil
+}
+
+func (a *App) CompleteDirectUpload(rctx request.CTX, us *model.UploadSession, complete *model.CompleteUploadRequest) (*model.FileInfo, *model.AppError) {
+	if us.Type != model.UploadTypeAttachment {
+		return nil, model.NewAppError("CompleteDirectUpload", "app.upload.complete.unsupported_type.app_error", nil, "", http.StatusBadRequest)
+	}
+
+	backend, ok := a.FileBackend().(filestore.FileBackendWithDirectUpload)
+	if !ok || !*a.Config().FileSettings.EnableDirectFileUploads {
+		return nil, model.NewAppError("CompleteDirectUpload", "app.upload.complete.direct_upload_disabled.app_error", nil, "", http.StatusNotImplemented)
+	}
+
+	stat, statErr := backend.StatFile(us.Path)
+	if statErr != nil {
+		return nil, model.NewAppError("CompleteDirectUpload", "app.upload.complete.stat_file.app_error", nil, "", http.StatusBadRequest).Wrap(statErr)
+	}
+	if stat.Size != us.FileSize {
+		return nil, model.NewAppError("CompleteDirectUpload", "app.upload.complete.size_mismatch.app_error", map[string]any{"Expected": us.FileSize, "Actual": stat.Size}, "", http.StatusBadRequest)
+	}
+
+	name := model.SanitizeFilename(us.Filename)
+	if name == "" {
+		return nil, model.NewAppError("CompleteDirectUpload", "app.upload.gen_file_info.invalid_filename.app_error", nil, "", http.StatusBadRequest)
+	}
+
+	info := model.NewInfo(name)
+	info.Size = stat.Size
+	if info.MimeType == "" && stat.ContentType != "" {
+		info.MimeType = stat.ContentType
+	}
+	info.CreatorId = us.UserId
+	info.ChannelId = us.ChannelId
+	info.Path = us.Path
+	info.RemoteId = model.NewPointer(us.RemoteId)
+	if us.ReqFileId != "" {
+		info.Id = us.ReqFileId
+	}
+
+	if info.IsImage() {
+		if complete != nil {
+			info.Width = complete.Width
+			info.Height = complete.Height
+		}
+		if info.Width > 0 && info.Height > 0 {
+			if limitErr := checkImageResolutionLimit(info.Width, info.Height, *a.Config().FileSettings.MaxImageResolution); limitErr != nil {
+				return nil, model.NewAppError("CompleteDirectUpload", "app.upload.upload_data.large_image.app_error",
+					map[string]any{"Filename": us.Filename, "Width": info.Width, "Height": info.Height}, "", http.StatusBadRequest)
+			}
+		}
+		if !info.IsSvg() {
+			info.ThumbnailPath = info.Path
+			info.PreviewPath = info.Path
+			info.HasPreviewImage = info.MimeType != "image/gif"
+		}
+	}
+
+	var storeErr error
+	if info, storeErr = a.Srv().Store().FileInfo().Save(rctx, info); storeErr != nil {
+		var appErr *model.AppError
+		switch {
+		case errors.As(storeErr, &appErr):
+			return nil, appErr
+		default:
+			return nil, model.NewAppError("CompleteDirectUpload", "app.upload.upload_data.save.app_error", nil, "", http.StatusInternalServerError).Wrap(storeErr)
+		}
+	}
+
+	if *a.Config().FileSettings.ExtractContent {
+		infoCopy := *info
+		a.Srv().Go(func() {
+			err := a.ExtractContentFromFileInfo(rctx, &infoCopy)
+			if err != nil {
+				rctx.Logger().Error("Failed to extract file content", mlog.Err(err), mlog.String("fileInfoId", infoCopy.Id))
+			}
+		})
+	}
+
+	if info.IsImage() && !info.IsSvg() && (info.ThumbnailPath != "" || info.PreviewPath != "") {
+		infoCopy := *info
+		a.Srv().Go(func() {
+			a.PrewarmFileCDNImages(rctx, &infoCopy)
+		})
+	}
+
 	if storeErr := a.Srv().Store().UploadSession().Delete(us.Id); storeErr != nil {
 		rctx.Logger().Warn("Failed to delete UploadSession", mlog.Err(storeErr))
 	}

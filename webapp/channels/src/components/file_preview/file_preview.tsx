@@ -12,12 +12,14 @@ import {getFileThumbnailUrl, getFileUrl} from 'mattermost-redux/utils/file_utils
 import FilenameOverlay from 'components/file_attachment/filename_overlay';
 
 import Constants, {FileTypes} from 'utils/constants';
+import {isHeavyMediaFile} from 'utils/file_utils';
 import * as Utils from 'utils/utils';
 
 import FileProgressPreview from './file_progress_preview';
 
 type UploadInfo = {
     name: string;
+    localPreviewUrl?: string;
     percent?: number;
     type?: string;
 }
@@ -59,7 +61,7 @@ export default class FilePreview extends React.PureComponent<Props> {
                         src={getFileUrl(info.id)}
                     />
                 );
-            } else if (type === FileTypes.IMAGE) {
+            } else if (type === FileTypes.IMAGE && !isHeavyMediaFile(info)) {
                 let imageClassName = 'post-image';
 
                 if ((info.width && info.width < Constants.THUMBNAIL_WIDTH) && (info.height && info.height < Constants.THUMBNAIL_HEIGHT)) {

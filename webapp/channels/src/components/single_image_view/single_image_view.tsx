@@ -22,6 +22,7 @@ import type {PropsFromRedux} from './index';
 
 const PREVIEW_IMAGE_MIN_DIMENSION = 50;
 const DISPROPORTIONATE_HEIGHT_RATIO = 20;
+const THUMBNAIL_CHECK_TIMEOUT_MS = 1500;
 
 export interface Props extends PropsFromRedux {
     postId: string;
@@ -45,6 +46,8 @@ type State = {
 
 export default class SingleImageView extends React.PureComponent<Props, State> {
     private mounted = false;
+    private thumbnailCheckAbortController?: AbortController;
+    private thumbnailCheckTimeout?: number;
     static defaultProps = {
         compactDisplay: false,
     };
@@ -80,12 +83,19 @@ export default class SingleImageView extends React.PureComponent<Props, State> {
         }
 
         const thumbnailUrl = getFileThumbnailUrl(fileInfo.id);
+        this.thumbnailCheckAbortController = new AbortController();
+        this.thumbnailCheckTimeout = window.setTimeout(() => {
+            this.thumbnailCheckAbortController?.abort();
+        }, THUMBNAIL_CHECK_TIMEOUT_MS);
 
         // Use Client4.getOptions() to get properly authenticated request options
         // This includes the Bearer token and all required headers
         const options = Client4.getOptions({method: 'HEAD'});
 
-        fetch(thumbnailUrl, options).then((response) => {
+        fetch(thumbnailUrl, {
+            ...options,
+            signal: this.thumbnailCheckAbortController.signal,
+        }).then((response) => {
             if (this.mounted) {
                 // 403 Forbidden with X-Reject-Reason header = rejected by plugin
                 const rejected = response.status === 403 && response.headers.get(HttpHeaders.REJECT_REASON) !== null;
@@ -101,6 +111,10 @@ export default class SingleImageView extends React.PureComponent<Props, State> {
                     thumbnailCheckComplete: true,
                     thumbnailRejected: false,
                 });
+            }
+        }).finally(() => {
+            if (this.thumbnailCheckTimeout) {
+                window.clearTimeout(this.thumbnailCheckTimeout);
             }
         });
     };
@@ -119,6 +133,10 @@ export default class SingleImageView extends React.PureComponent<Props, State> {
 
     componentWillUnmount() {
         this.mounted = false;
+        this.thumbnailCheckAbortController?.abort();
+        if (this.thumbnailCheckTimeout) {
+            window.clearTimeout(this.thumbnailCheckTimeout);
+        }
     }
 
     imageLoaded = () => {

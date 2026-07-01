@@ -10,6 +10,7 @@ import FilePreviewModal from 'components/file_preview_modal';
 import SingleImageView from 'components/single_image_view';
 
 import {FileTypes, ModalIdentifiers} from 'utils/constants';
+import {isHeavyMediaFile} from 'utils/file_utils';
 import {getFileType} from 'utils/utils';
 
 import type {OwnProps, PropsFromRedux} from './index';
@@ -49,7 +50,7 @@ export default function FileAttachmentList(props: Props) {
     if (fileInfos && fileInfos.length === 1 && !fileInfos[0].archived && !props.firstFileRejected) {
         const fileType = getFileType(fileInfos[0].extension);
 
-        if (fileType === FileTypes.IMAGE || (fileType === FileTypes.SVG && enableSVGs)) {
+        if ((fileType === FileTypes.IMAGE || (fileType === FileTypes.SVG && enableSVGs)) && !isHeavyMediaFile(fileInfos[0])) {
             return (
                 <SingleImageView
                     fileInfo={fileInfos[0]}

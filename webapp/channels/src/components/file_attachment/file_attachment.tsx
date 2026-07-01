@@ -17,7 +17,7 @@ import MenuWrapper from 'components/widgets/menu/menu_wrapper';
 import WithTooltip from 'components/with_tooltip';
 
 import {Constants, FileTypes, ModalIdentifiers} from 'utils/constants';
-import {trimFilename} from 'utils/file_utils';
+import {isHeavyMediaFile, trimFilename} from 'utils/file_utils';
 import {
     fileSizeToString,
     getFileType,
@@ -63,7 +63,7 @@ export default function FileAttachment(props: Props) {
 
     const {formatMessage} = useIntl();
 
-    const [loaded, setLoaded] = useState(getFileType(props.fileInfo.extension) !== FileTypes.IMAGE);
+    const [loaded, setLoaded] = useState(getFileType(props.fileInfo.extension) !== FileTypes.IMAGE || isHeavyMediaFile(props.fileInfo));
     const [loadFilesCalled, setLoadFilesCalled] = useState(false);
     const [keepOpen, setKeepOpen] = useState(false);
     const [openUp, setOpenUp] = useState(false);
@@ -95,6 +95,11 @@ export default function FileAttachment(props: Props) {
         }
 
         const fileType = getFileType(fileInfo.extension);
+
+        if (isHeavyMediaFile(fileInfo)) {
+            setLoaded(true);
+            return;
+        }
 
         if (!props.disableThumbnail) {
             if (fileType === FileTypes.IMAGE) {
@@ -128,9 +133,9 @@ export default function FileAttachment(props: Props) {
 
     useEffect(() => {
         if (props.fileInfo.id) {
-            setLoaded(getFileType(props.fileInfo.extension) !== FileTypes.IMAGE && !(props.enableSVGs && props.fileInfo.extension === FileTypes.SVG));
+            setLoaded((getFileType(props.fileInfo.extension) !== FileTypes.IMAGE && !(props.enableSVGs && props.fileInfo.extension === FileTypes.SVG)) || isHeavyMediaFile(props.fileInfo));
         }
-    }, [props.fileInfo.extension, props.fileInfo.id, props.enableSVGs]);
+    }, [props.fileInfo.extension, props.fileInfo.id, props.fileInfo.size, props.enableSVGs]);
 
     // If file becomes rejected, mark as loaded so it shows the file icon
     useEffect(() => {

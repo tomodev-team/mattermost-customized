@@ -208,6 +208,46 @@ func TestConfigDefaultFileSettingsS3SSE(t *testing.T) {
 	require.False(t, *c1.FileSettings.AmazonS3SSE)
 }
 
+func TestConfigDefaultFileSettingsDirectUploadsAndCDN(t *testing.T) {
+	c1 := Config{}
+	c1.SetDefaults()
+
+	require.False(t, *c1.FileSettings.EnableDirectFileUploads)
+	require.Equal(t, int64(900), *c1.FileSettings.DirectFileUploadExpiresSeconds)
+	require.Empty(t, *c1.FileSettings.FileCDNURL)
+	require.Empty(t, *c1.FileSettings.FileCDNSigningSecret)
+	require.Equal(t, int64(300), *c1.FileSettings.FileCDNURLExpiresSeconds)
+}
+
+func TestFileSettingsDirectUploadsAndCDNValidation(t *testing.T) {
+	t.Run("valid defaults", func(t *testing.T) {
+		cfg := Config{}
+		cfg.SetDefaults()
+
+		require.Nil(t, cfg.FileSettings.isValid())
+	})
+
+	t.Run("invalid direct upload expiry", func(t *testing.T) {
+		cfg := Config{}
+		cfg.SetDefaults()
+		cfg.FileSettings.DirectFileUploadExpiresSeconds = NewPointer(int64(0))
+
+		appErr := cfg.FileSettings.isValid()
+		require.NotNil(t, appErr)
+		require.Equal(t, "model.config.is_valid.direct_upload_expiry.app_error", appErr.Id)
+	})
+
+	t.Run("invalid CDN URL expiry", func(t *testing.T) {
+		cfg := Config{}
+		cfg.SetDefaults()
+		cfg.FileSettings.FileCDNURLExpiresSeconds = NewPointer(int64(0))
+
+		appErr := cfg.FileSettings.isValid()
+		require.NotNil(t, appErr)
+		require.Equal(t, "model.config.is_valid.file_cdn_url_expiry.app_error", appErr.Id)
+	})
+}
+
 func TestFileSettingsDirectoryWhitespaceValidation(t *testing.T) {
 	// Define Unicode whitespace characters to test
 	unicodeWhitespaces := []struct {
@@ -1591,6 +1631,7 @@ func TestConfigSanitize(t *testing.T) {
 	*c.LdapSettings.BindPassword = "foo"
 	*c.FileSettings.AmazonS3SecretAccessKey = "bar"
 	*c.FileSettings.ExportAmazonS3SecretAccessKey = "export-secret"
+	*c.FileSettings.FileCDNSigningSecret = "cdn-secret"
 	*c.EmailSettings.SMTPPassword = "baz"
 	*c.GitLabSettings.Secret = "bingo"
 	*c.OpenIdSettings.Secret = "secret"
@@ -1612,6 +1653,7 @@ func TestConfigSanitize(t *testing.T) {
 	assert.Equal(t, FakeSetting, *c.FileSettings.PublicLinkSalt)
 	assert.Equal(t, FakeSetting, *c.FileSettings.AmazonS3SecretAccessKey)
 	assert.Equal(t, FakeSetting, *c.FileSettings.ExportAmazonS3SecretAccessKey)
+	assert.Equal(t, FakeSetting, *c.FileSettings.FileCDNSigningSecret)
 	assert.Equal(t, FakeSetting, *c.EmailSettings.SMTPPassword)
 	assert.Equal(t, FakeSetting, *c.GitLabSettings.Secret)
 	assert.Equal(t, FakeSetting, *c.OpenIdSettings.Secret)

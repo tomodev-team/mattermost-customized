@@ -7107,6 +7107,20 @@ func (c *Client4) UploadData(ctx context.Context, uploadId string, data io.Reade
 	return DecodeJSONFromResponse[*FileInfo](r)
 }
 
+// CompleteUpload finalizes a direct upload after the object has been written
+// to file storage.
+func (c *Client4) CompleteUpload(ctx context.Context, uploadId string, complete *CompleteUploadRequest) (*FileInfo, *Response, error) {
+	if complete == nil {
+		complete = &CompleteUploadRequest{}
+	}
+	r, err := c.doAPIPostJSON(ctx, c.uploadRoute(uploadId).Join("complete"), complete)
+	if err != nil {
+		return nil, BuildResponse(r), err
+	}
+	defer closeBody(r)
+	return DecodeJSONFromResponse[*FileInfo](r)
+}
+
 func (c *Client4) UpdatePassword(ctx context.Context, userId, currentPassword, newPassword string) (*Response, error) {
 	requestBody := map[string]string{"current_password": currentPassword, "new_password": newPassword}
 	r, err := c.doAPIPutJSON(ctx, c.userRoute(userId).Join("password"), requestBody)

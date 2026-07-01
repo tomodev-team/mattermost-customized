@@ -1800,6 +1800,11 @@ type FileSettings struct {
 	AmazonS3RequestTimeoutMilliseconds *int64  `access:"environment_file_storage,write_restrictable,cloud_restrictable"` // telemetry: none
 	AmazonS3UploadPartSizeBytes        *int64  `access:"environment_file_storage,write_restrictable,cloud_restrictable"` // telemetry: none
 	AmazonS3StorageClass               *string `access:"environment_file_storage,write_restrictable,cloud_restrictable"` // telemetry: none
+	EnableDirectFileUploads            *bool   `access:"environment_file_storage,write_restrictable,cloud_restrictable"`
+	DirectFileUploadExpiresSeconds     *int64  `access:"environment_file_storage,write_restrictable,cloud_restrictable"` // telemetry: none
+	FileCDNURL                         *string `access:"environment_file_storage,write_restrictable,cloud_restrictable"` // telemetry: none
+	FileCDNSigningSecret               *string `access:"environment_file_storage,write_restrictable,cloud_restrictable"` // telemetry: none
+	FileCDNURLExpiresSeconds           *int64  `access:"environment_file_storage,write_restrictable,cloud_restrictable"` // telemetry: none
 	// Export store settings
 	DedicatedExportStore                     *bool   `access:"environment_file_storage,write_restrictable"`
 	ExportDriverName                         *string `access:"environment_file_storage,write_restrictable"`
@@ -1932,6 +1937,26 @@ func (s *FileSettings) SetDefaults(isUpdate bool) {
 
 	if s.AmazonS3StorageClass == nil {
 		s.AmazonS3StorageClass = NewPointer("")
+	}
+
+	if s.EnableDirectFileUploads == nil {
+		s.EnableDirectFileUploads = NewPointer(false)
+	}
+
+	if s.DirectFileUploadExpiresSeconds == nil {
+		s.DirectFileUploadExpiresSeconds = NewPointer(int64(900))
+	}
+
+	if s.FileCDNURL == nil {
+		s.FileCDNURL = NewPointer("")
+	}
+
+	if s.FileCDNSigningSecret == nil {
+		s.FileCDNSigningSecret = NewPointer("")
+	}
+
+	if s.FileCDNURLExpiresSeconds == nil {
+		s.FileCDNURLExpiresSeconds = NewPointer(int64(300))
 	}
 
 	if s.DedicatedExportStore == nil {
@@ -4426,6 +4451,14 @@ func (s *FileSettings) isValid() *AppError {
 		return NewAppError("Config.IsValid", "model.config.is_valid.amazons3_timeout.app_error", map[string]any{"Value": *s.MaxImageDecoderConcurrency}, "", http.StatusBadRequest)
 	}
 
+	if *s.DirectFileUploadExpiresSeconds <= 0 {
+		return NewAppError("Config.IsValid", "model.config.is_valid.direct_upload_expiry.app_error", nil, "", http.StatusBadRequest)
+	}
+
+	if *s.FileCDNURLExpiresSeconds <= 0 {
+		return NewAppError("Config.IsValid", "model.config.is_valid.file_cdn_url_expiry.app_error", nil, "", http.StatusBadRequest)
+	}
+
 	if *s.AmazonS3StorageClass != "" && !slices.Contains([]string{StorageClassStandard, StorageClassReducedRedundancy, StorageClassStandardIA, StorageClassOnezoneIA, StorageClassIntelligentTiering, StorageClassGlacier, StorageClassDeepArchive, StorageClassOutposts, StorageClassGlacierIR, StorageClassSnow, StorageClassExpressOnezone}, *s.AmazonS3StorageClass) {
 		return NewAppError("Config.IsValid", "model.config.is_valid.storage_class.app_error", map[string]any{"Value": *s.AmazonS3StorageClass}, "", http.StatusBadRequest)
 	}
@@ -5064,6 +5097,10 @@ func (o *Config) Sanitize(pluginManifests []*Manifest, opts *SanitizeOptions) {
 
 	if o.FileSettings.ExportAmazonS3SecretAccessKey != nil && *o.FileSettings.ExportAmazonS3SecretAccessKey != "" {
 		*o.FileSettings.ExportAmazonS3SecretAccessKey = FakeSetting
+	}
+
+	if o.FileSettings.FileCDNSigningSecret != nil && *o.FileSettings.FileCDNSigningSecret != "" {
+		*o.FileSettings.FileCDNSigningSecret = FakeSetting
 	}
 
 	if o.EmailSettings.SMTPPassword != nil && *o.EmailSettings.SMTPPassword != "" {

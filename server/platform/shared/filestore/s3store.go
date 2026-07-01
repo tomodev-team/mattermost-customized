@@ -67,6 +67,7 @@ var (
 	// Ensure that the ReaderAt interface is implemented.
 	_ io.ReaderAt                  = (*s3WithCancel)(nil)
 	_ FileBackendWithLinkGenerator = (*S3FileBackend)(nil)
+	_ FileBackendWithDirectUpload  = (*S3FileBackend)(nil)
 )
 
 func getContentType(ext string) string {
@@ -348,6 +349,27 @@ func (b *S3FileBackend) FileSize(path string) (int64, error) {
 	}
 
 	return info.Size, nil
+}
+
+func (b *S3FileBackend) StatFile(path string) (*FileBackendFileInfo, error) {
+	path, err := b.prefixedPath(path)
+	if err != nil {
+		return nil, errors.Wrapf(err, "unable to prefix path %s", path)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), b.timeout)
+	defer cancel()
+	info, err := b.client.StatObject(ctx, b.bucket, path, s3.StatObjectOptions{})
+	if err != nil {
+		return nil, errors.Wrapf(err, "unable to stat file %s", path)
+	}
+
+	return &FileBackendFileInfo{
+		Size:        info.Size,
+		ContentType: info.ContentType,
+		ModTime:     info.LastModified,
+		ETag:        info.ETag,
+	}, nil
 }
 
 func (b *S3FileBackend) FileModTime(path string) (time.Time, error) {
@@ -795,6 +817,25 @@ func (b *S3FileBackend) GeneratePublicLink(path string) (string, time.Duration, 
 	}
 
 	return req.String(), b.presignExpires, nil
+}
+
+func (b *S3FileBackend) GenerateUploadLink(path string, expires time.Duration) (string, time.Duration, error) {
+	path, err := b.prefixedPath(path)
+	if err != nil {
+		return "", 0, errors.Wrapf(err, "unable to prefix path %s", path)
+	}
+	if expires <= 0 {
+		expires = b.presignExpires
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), b.timeout)
+	defer cancel()
+
+	req, err := b.client.PresignedPutObject(ctx, b.bucket, path, expires)
+	if err != nil {
+		return "", 0, errors.Wrapf(err, "unable to generate upload link for %s", path)
+	}
+
+	return req.String(), expires, nil
 }
 
 func (b *S3FileBackend) lookupOriginalPath(s string) (bool, error) {

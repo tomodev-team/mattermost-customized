@@ -8,6 +8,9 @@ import type {ClientConfig} from '@mattermost/types/config';
 
 import Constants from 'utils/constants';
 
+const HEAVY_IMAGE_PREVIEW_THRESHOLD_BYTES = 10 * 1024 * 1024;
+const HEAVY_VIDEO_PREVIEW_THRESHOLD_BYTES = 50 * 1024 * 1024;
+
 export const FileSizes = {
     Bit: 1,
     Byte: 1 * 8,
@@ -86,6 +89,40 @@ export function getFileTypeFromMime(mimetype: string) {
     }
 
     return 'other';
+}
+
+type PreviewableFileInfo = {
+    extension?: string;
+    height?: number;
+    mime_type?: string;
+    size?: number;
+    type?: string;
+    width?: number;
+};
+
+export function isHeavyMediaFile(fileInfo?: PreviewableFileInfo) {
+    if (!fileInfo?.size) {
+        return false;
+    }
+
+    const mimeType = fileInfo.mime_type || fileInfo.type || '';
+    const extension = (fileInfo.extension || '').toLowerCase();
+
+    const isImage = mimeType.startsWith('image/') || Constants.IMAGE_TYPES.includes(extension);
+    if (isImage) {
+        if (fileInfo.width === 0 || fileInfo.height === 0) {
+            return true;
+        }
+
+        return fileInfo.size >= HEAVY_IMAGE_PREVIEW_THRESHOLD_BYTES;
+    }
+
+    const isVideo = mimeType.startsWith('video/') || Constants.VIDEO_TYPES.includes(extension);
+    if (isVideo) {
+        return fileInfo.size >= HEAVY_VIDEO_PREVIEW_THRESHOLD_BYTES;
+    }
+
+    return false;
 }
 
 // based on https://stackoverflow.com/questions/7584794/accessing-jpeg-exif-rotation-data-in-javascript-on-the-client-side/32490603#32490603

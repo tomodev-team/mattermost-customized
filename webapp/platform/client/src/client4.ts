@@ -65,7 +65,7 @@ import type {
 import type {Draft} from '@mattermost/types/drafts';
 import type {CustomEmoji} from '@mattermost/types/emojis';
 import type {ServerError} from '@mattermost/types/errors';
-import type {FileInfo, FileUploadResponse, FileSearchResults} from '@mattermost/types/files';
+import type {CompleteUploadRequest, FileInfo, FileUploadResponse, FileSearchResults, UploadSession} from '@mattermost/types/files';
 import type {SystemSetting} from '@mattermost/types/general';
 import type {
     Group,
@@ -392,6 +392,14 @@ export default class Client4 {
 
     getFileRoute(fileId: string) {
         return `${this.getFilesRoute()}/${fileId}`;
+    }
+
+    getUploadsRoute() {
+        return `${this.getBaseRoute()}/uploads`;
+    }
+
+    getUploadRoute(uploadId: string) {
+        return `${this.getUploadsRoute()}/${uploadId}`;
     }
 
     getPreferencesRoute(userId: string) {
@@ -2799,6 +2807,20 @@ export default class Client4 {
         return this.doFetch<FileUploadResponse>(
             `${this.getFilesRoute()}${buildQueryString({bookmark: isBookmark})}`,
             request,
+        );
+    };
+
+    createUpload = (upload: Partial<UploadSession>) => {
+        return this.doFetch<UploadSession>(
+            this.getUploadsRoute(),
+            {method: 'post', body: JSON.stringify(upload)},
+        );
+    };
+
+    completeUpload = (uploadId: string, complete: CompleteUploadRequest) => {
+        return this.doFetch<FileInfo>(
+            `${this.getUploadRoute(uploadId)}/complete`,
+            {method: 'post', body: JSON.stringify(complete)},
         );
     };
 

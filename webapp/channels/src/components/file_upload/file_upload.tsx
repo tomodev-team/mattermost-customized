@@ -302,6 +302,7 @@ export class FileUpload extends PureComponent<Props, State> {
         const tooLargeFiles: File[] = [];
         const zeroFiles: File[] = [];
         const clientIds: string[] = [];
+        const filesToUpload: Array<{file: File; clientId: string}> = [];
 
         for (let i = 0; i < sortedFiles.length && numUploads < uploadsRemaining; i++) {
             if (sortedFiles[i].size > this.props.maxFileSize) {
@@ -314,11 +315,20 @@ export class FileUpload extends PureComponent<Props, State> {
 
             // generate a unique id that can be used by other components to refer back to this upload
             const clientId = generateId();
+            filesToUpload.push({file: sortedFiles[i], clientId});
+            clientIds.push(clientId);
 
-            const request = this.props.actions.uploadFile({
-                file: sortedFiles[i],
-                name: sortedFiles[i].name,
-                type: sortedFiles[i].type,
+            numUploads += 1;
+        }
+
+        this.props.onUploadStart(clientIds, channelId);
+
+        const requests = {...this.state.requests};
+        for (const {file, clientId} of filesToUpload) {
+            requests[clientId] = this.props.actions.uploadFile({
+                file,
+                name: file.name,
+                type: file.type,
                 rootId: rootId || '',
                 channelId,
                 clientId,
@@ -326,14 +336,8 @@ export class FileUpload extends PureComponent<Props, State> {
                 onSuccess: this.fileUploadSuccess,
                 onError: this.fileUploadFail,
             });
-
-            this.setState({requests: {...this.state.requests, [clientId]: request}});
-            clientIds.push(clientId);
-
-            numUploads += 1;
         }
-
-        this.props.onUploadStart(clientIds, channelId);
+        this.setState({requests});
 
         const {formatMessage} = this.props.intl;
         const errors = [];

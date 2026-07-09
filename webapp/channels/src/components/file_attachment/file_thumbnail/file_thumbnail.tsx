@@ -5,7 +5,7 @@ import React, {memo} from 'react';
 
 import type {FileInfo} from '@mattermost/types/files';
 
-import {getFileThumbnailUrl, getFileUrl} from 'mattermost-redux/utils/file_utils';
+import {getFilePreviewUrl, getFileThumbnailUrl, getFileUrl} from 'mattermost-redux/utils/file_utils';
 
 import type {FilePreviewInfo} from 'components/file_preview/file_preview';
 
@@ -24,6 +24,7 @@ type Props = {
     fileInfo: FileInfo | FilePreviewInfo | FilePreviewInfoLimited;
     disablePreview?: boolean;
     isRejected?: boolean;
+    usePreviewImage?: boolean;
 };
 
 const FileThumbnail = ({
@@ -31,6 +32,7 @@ const FileThumbnail = ({
     enableSVGs,
     disablePreview,
     isRejected,
+    usePreviewImage,
 }: Props) => {
     const {id, extension, has_preview_image: hasPreviewImage, width = 0, height = 0} = (fileInfo as FileInfo);
     const mimeType = (fileInfo as FileInfo).mime_type || (fileInfo as FilePreviewInfo | FilePreviewInfoLimited).type;
@@ -53,7 +55,7 @@ const FileThumbnail = ({
                 className += ' normal';
             }
 
-            let thumbnailUrl = getFileThumbnailUrl(id);
+            let thumbnailUrl = usePreviewImage && hasPreviewImage ? getFilePreviewUrl(id) : getFileThumbnailUrl(id);
             if (extension && isGIFImage(extension) && !hasPreviewImage) {
                 thumbnailUrl = getFileUrl(id);
             }
@@ -72,6 +74,17 @@ const FileThumbnail = ({
                 <img
                     alt={'file thumbnail image'}
                     className='post-image normal'
+                    src={getFileUrl(id)}
+                />
+            );
+        } else if (type === FileTypes.VIDEO) {
+            return (
+                <video
+                    aria-label='video thumbnail'
+                    className='post-image normal'
+                    muted={true}
+                    playsInline={true}
+                    preload='metadata'
                     src={getFileUrl(id)}
                 />
             );

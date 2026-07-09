@@ -54,6 +54,19 @@ describe('FileThumbnail', () => {
         expect(container).toMatchSnapshot();
     });
 
+    test('should render preview image when requested', () => {
+        const {container} = render(
+            <FileThumbnail
+                {...baseProps}
+                usePreviewImage={true}
+            />,
+        );
+
+        expect(container.querySelector('.post-image')).toHaveStyle({
+            backgroundImage: 'url(/api/v4/files/thumbnail_id/preview)',
+        });
+    });
+
     test('should render an svg when svg previews are enabled', () => {
         const props = {
             ...baseProps,
@@ -105,6 +118,26 @@ describe('FileThumbnail', () => {
 
         expect(container).toMatchSnapshot();
         expect(container.querySelector('div.file-icon')).toBeInTheDocument();
+    });
+
+    test('should render a video thumbnail for a video', () => {
+        const props = {
+            ...baseProps,
+            fileInfo: {
+                ...fileInfo,
+                extension: 'mp4',
+                mime_type: 'video/mp4',
+                size: 17 * 1024 * 1024,
+            },
+        };
+
+        const {container} = render(
+            <FileThumbnail {...props}/>,
+        );
+
+        expect(container).toMatchSnapshot();
+        expect(container.querySelector('video.post-image')).toBeInTheDocument();
+        expect(container.querySelector('div.file-icon')).not.toBeInTheDocument();
     });
 
     test('should render an icon for a PSD (MM-67077)', () => {

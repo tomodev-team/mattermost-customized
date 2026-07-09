@@ -37,7 +37,7 @@ function applyCorsHeaders(headers, request, env) {
 
     headers.set('Access-Control-Allow-Origin', origin);
     headers.set('Access-Control-Allow-Credentials', 'true');
-    headers.set('Access-Control-Expose-Headers', 'Cache-Control, Content-Disposition, Content-Length, Content-Type, ETag');
+    headers.set('Access-Control-Expose-Headers', 'Accept-Ranges, Cache-Control, Content-Disposition, Content-Length, Content-Range, Content-Type, ETag');
     appendVary(headers, 'Origin');
     return headers;
 }
@@ -139,6 +139,10 @@ function isImageVariant(params) {
     return params.variant === 'thumbnail' || params.variant === 'preview';
 }
 
+function isRangeRequest(request) {
+    return request.headers.has('Range');
+}
+
 function derivativeKey(params) {
     return `${DERIVATIVE_PREFIX}/${params.variant}/${params.key}.webp`;
 }
@@ -180,12 +184,32 @@ function originalObjectResponse(object, params, request, options = {}) {
     const headers = new Headers(responseHeaders(params, options.cacheControl || 'private, max-age=300'));
     headers.set('Content-Type', params.mime);
     headers.set('ETag', object.httpEtag);
+    headers.set('Accept-Ranges', 'bytes');
     if (options.imageFallback) {
         headers.set('X-Mattermost-CDN-Image-Fallback', 'original');
     }
 
+    let status = 200;
+    if (object.range) {
+        const range = object.range;
+        let start = 0;
+        let end = object.size - 1;
+        if (typeof range.offset === 'number') {
+            start = range.offset;
+            if (typeof range.length === 'number') {
+                end = Math.min(start + range.length - 1, object.size - 1);
+            }
+        } else if (typeof range.suffix === 'number') {
+            start = Math.max(object.size - range.suffix, 0);
+        }
+
+        headers.set('Content-Range', `bytes ${start}-${end}/${object.size}`);
+        headers.set('Content-Length', String(end - start + 1));
+        status = 206;
+    }
+
     return new Response(request.method === 'HEAD' ? null : object.body, {
-        status: 200,
+        status,
         headers,
     });
 }
@@ -264,9 +288,12 @@ export default {
 
         const cache = caches.default;
         const cacheKey = buildCacheKey(request, params);
-        const cached = await cache.match(cacheKey);
-        if (cached) {
-            return withCors(request.method === 'HEAD' ? headResponse(cached) : cached, request, env);
+        const shouldUseCache = !isRangeRequest(request);
+        if (shouldUseCache) {
+            const cached = await cache.match(cacheKey);
+            if (cached) {
+                return withCors(request.method === 'HEAD' ? headResponse(cached) : cached, request, env);
+            }
         }
 
         if (isImageVariant(params)) {
@@ -280,7 +307,7 @@ export default {
             }
         }
 
-        const object = await env.FILES_BUCKET.get(params.key);
+        const object = await env.FILES_BUCKET.get(params.key, isRangeRequest(request) && !isImageVariant(params) ? {range: request.headers} : undefined);
         if (!object) {
             return withCors(new Response('Not found', {status: 404}), request, env);
         }
@@ -299,7 +326,7 @@ export default {
         }
 
         const isFallbackImage = response.headers.get('X-Mattermost-CDN-Image-Fallback') === 'original';
-        if (request.method === 'GET' && response.ok && params.download !== '1' && !isFallbackImage) {
+        if (shouldUseCache && request.method === 'GET' && response.ok && params.download !== '1' && !isFallbackImage) {
             if (isImageVariant(params)) {
                 ctx.waitUntil(storeDerivative(env, params, response.clone()));
             }

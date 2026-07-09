@@ -18,6 +18,18 @@ exports[`FileThumbnail should render a small image 1`] = `
 </div>
 `;
 
+exports[`FileThumbnail should render a video thumbnail for a video 1`] = `
+<div>
+  <video
+    aria-label="video thumbnail"
+    class="post-image normal"
+    playsinline=""
+    preload="metadata"
+    src="/api/v4/files/thumbnail_id"
+  />
+</div>
+`;
+
 exports[`FileThumbnail should render an icon for a PDF 1`] = `
 <div>
   <div

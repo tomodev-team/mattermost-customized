@@ -17,6 +17,15 @@ import type {OwnProps, PropsFromRedux} from './index';
 
 type Props = OwnProps & PropsFromRedux;
 
+function isGalleryImage(fileInfo: Props['fileInfos'][number], enableSVGs: boolean) {
+    if (fileInfo.archived || fileInfo.delete_at > 0 || isHeavyMediaFile(fileInfo)) {
+        return false;
+    }
+
+    const fileType = getFileType(fileInfo.extension);
+    return fileType === FileTypes.IMAGE || (fileType === FileTypes.SVG && enableSVGs);
+}
+
 export default function FileAttachmentList(props: Props) {
     const handleImageClick = (indexClicked: number) => {
         props.actions.openModal({
@@ -40,6 +49,7 @@ export default function FileAttachmentList(props: Props) {
     } = props;
 
     const sortedFileInfos = useMemo(() => sortFileInfos(fileInfos ? [...fileInfos] : [], locale), [fileInfos, locale]);
+    const galleryDisplay = sortedFileInfos.length > 1 && sortedFileInfos.every((fileInfo) => isGalleryImage(fileInfo, enableSVGs));
 
     if (fileInfos.length === 0) {
         return null;
@@ -85,6 +95,7 @@ export default function FileAttachmentList(props: Props) {
                     disableActions={props.disableActions}
                     disableThumbnail={isDeleted}
                     disablePreview={isDeleted}
+                    galleryDisplay={galleryDisplay}
                     overrideGenerateFileDownloadUrl={props.overrideGenerateFileDownloadUrl}
                 />,
             );
@@ -104,7 +115,7 @@ export default function FileAttachmentList(props: Props) {
     return (
         <div
             data-testid='fileAttachmentList'
-            className='post-image__columns clearfix'
+            className={`post-image__columns${galleryDisplay ? ' post-image__columns--gallery' : ''} clearfix`}
         >
             {postFiles}
         </div>

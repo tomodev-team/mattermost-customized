@@ -55,6 +55,7 @@ type Props = PropsFromRedux & {
     handleFileDropdownOpened?: (open: boolean) => void;
     disableThumbnail?: boolean;
     disableActions?: boolean;
+    galleryDisplay?: boolean;
     overrideGenerateFileDownloadUrl?: (fileId: string) => string;
 };
 
@@ -302,11 +303,14 @@ export default function FileAttachment(props: Props) {
             >
                 {loaded && !props.disableThumbnail ? (
                     <FileThumbnail
+                        enableSVGs={props.enableSVGs}
                         fileInfo={fileInfo}
                         disablePreview={props.disablePreview}
+                        usePreviewImage={props.galleryDisplay}
                     />
                 ) : (
                     <FileThumbnail
+                        enableSVGs={props.enableSVGs}
                         fileInfo={props.fileInfo}
                         disablePreview={true}
                     />
@@ -395,16 +399,22 @@ export default function FileAttachment(props: Props) {
             </span>);
     }
 
+    const galleryStyle = props.galleryDisplay && fileInfo.width && fileInfo.height ? {
+        '--file-aspect-ratio': `${fileInfo.width} / ${fileInfo.height}`,
+    } as React.CSSProperties : undefined;
+
     return (
         <WithTooltip
             title={<ArchivedTooltip/>}
             disabled={!fileInfo.archived}
         >
             <div
+                style={galleryStyle}
                 className={classNames([
                     'post-image__column',
                     {'keep-open': keepOpen},
                     {'post-image__column--archived': fileInfo.archived},
+                    {'post-image__column--gallery': props.galleryDisplay},
                 ])}
             >
                 {fileThumbnail}

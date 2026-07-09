@@ -19,9 +19,9 @@ describe('FileAttachmentList', () => {
         file_ids: ['file_id_1', 'file_id_2', 'file_id_3'],
     });
     const fileInfos = [
-        TestHelper.getFileInfoMock({id: 'file_id_3', name: 'image_3.png', extension: 'png', create_at: 3, post_id: post.id}),
-        TestHelper.getFileInfoMock({id: 'file_id_2', name: 'image_2.png', extension: 'png', create_at: 2, post_id: post.id}),
-        TestHelper.getFileInfoMock({id: 'file_id_1', name: 'image_1.png', extension: 'png', create_at: 1, post_id: post.id}),
+        TestHelper.getFileInfoMock({id: 'file_id_3', name: 'image_3.png', extension: 'png', create_at: 3, delete_at: 0, post_id: post.id, width: 640, height: 480}),
+        TestHelper.getFileInfoMock({id: 'file_id_2', name: 'image_2.png', extension: 'png', create_at: 2, delete_at: 0, post_id: post.id, width: 640, height: 480}),
+        TestHelper.getFileInfoMock({id: 'file_id_1', name: 'image_1.png', extension: 'png', create_at: 1, delete_at: 0, post_id: post.id, width: 640, height: 480}),
     ];
     const baseProps = {
         post,
@@ -80,6 +80,16 @@ describe('FileAttachmentList', () => {
         expect(fileAttachments[0]?.textContent?.includes('image_1.png')).toBe(true);
         expect(fileAttachments[1]?.textContent?.includes('image_2.png')).toBe(true);
         expect(fileAttachments[2]?.textContent?.includes('image_3.png')).toBe(true);
+    });
+
+    test('should use gallery layout for multiple images', () => {
+        renderWithContext(<FileAttachmentList {...baseProps}/>, defaultState);
+
+        const fileAttachmentList = screen.getByTestId('fileAttachmentList');
+        const fileAttachments = Array.from(fileAttachmentList.querySelectorAll('.post-image__column'));
+
+        expect(fileAttachmentList).toHaveClass('post-image__columns--gallery');
+        expect(fileAttachments.every((attachment) => attachment.classList.contains('post-image__column--gallery'))).toBe(true);
     });
 
     test('should render a SingleImageView for a single image', () => {
